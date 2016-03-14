@@ -49,9 +49,9 @@ CFLAGS = -Wno-write-strings -m32
 #CFLAGS = +d -w #                            # for DCC
 
 # optimization
-#OFLAGS = -O3
+OFLAGS = -O3
 
 # rules for compiling
-%: %.C
+mysolution: mysolution.C
 	${CXX} ${CFLAGS} ${OFLAGS} -o $@ $@.C -I${INCLUDEPATH} -lm
 

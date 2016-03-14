@@ -25,11 +25,11 @@ type
 
   VCType: VC0..NumVCs-1;
 
-  MessageType: enum {  ReadReq,         -- request for data / exclusivity
-                       ReadAck,         -- read ack (w/ data)
+  MessageType: enum {  ReadReq,					-- request for data / exclusivity
+                       ReadAck,					-- read ack (w/ data)
                                              
-								       WBReq,           -- writeback request (w/ data)
-								       WBAck,           -- writeback ack 
+				       WBReq,					-- writeback request (w/ data)
+				       WBAck,					-- writeback ack 
                            
                        RecallReq 				-- Request & invalidate a valid copy
                     };
@@ -45,18 +45,18 @@ type
 
   HomeState:
     Record
-      state: enum { H_Valid, H_Invalid, 					--stable states
-      							HT_Pending }; 								--transient states during recall
+      state: enum { H_I, H_S, H_M, 					--stable states
+      				H_Pending }; 					--transient states during recall
       owner: Node;	
-      --sharers: multiset [ProcCount] of Node;    --No need for sharers in this protocol, but this is a good way to represent them
+      sharers: multiset [ProcCount] of Node;		--No need for sharers in this protocol, but this is a good way to represent them
       val: Value; 
     End;
 
   ProcState:
     Record
-      state: enum { P_Valid, P_Invalid,
-                  PT_Pending, PT_WritebackPending
-                  };
+      state: enum { P_I, P_S, P_M,					--stable states
+                  P_IS_D, P_IM_AD, P_IM_A, P_SM_AD, 
+				  P_SM_A, P_MI_A, P_SI_A, P_II_A }; --transient states
       val: Value;
     End;
 
@@ -67,7 +67,7 @@ var
   HomeNode:  HomeState;
   Procs: array [Proc] of ProcState;
   Net:   array [Node] of multiset [NetMax] of Message;  -- One multiset for each destination - messages are arbitrarily reordered by the multiset
-  InBox: array [Node] of array [VCType] of Message; -- If a message is not processed, it is placed in InBox, blocking that virtual channel
+  InBox: array [Node] of array [VCType] of Message;		-- If a message is not processed, it is placed in InBox, blocking that virtual channel
   msg_processed: boolean;
   LastWrite: Value; -- Used to confirm that writes are not lost; this variable would not exist in real hardware
 
@@ -100,7 +100,6 @@ Begin
   error "Unhandled state!";
 End;
 
-/*
 -- These aren't needed for Valid/Invalid protocol, but this is a good way of writing these functions
 Procedure AddToSharersList(n:Node);
 Begin
@@ -134,7 +133,6 @@ Begin
     endif;
   endfor;
 End;
-*/
 
 
 Procedure HomeReceive(msg:Message);
@@ -371,7 +369,7 @@ startstate
 
 	For v:Value do
   -- home node initialization
-  HomeNode.state := H_Invalid;
+  HomeNode.state := H_I;
   undefine HomeNode.owner;
   HomeNode.val := v;
 	endfor;
@@ -379,7 +377,7 @@ startstate
   
   -- processor initialization
   for i:Proc do
-    Procs[i].state := P_Invalid;
+    Procs[i].state := P_I;
     undefine Procs[i].val;
   endfor;
 
@@ -392,53 +390,51 @@ endstartstate;
 ----------------------------------------------------------------------
 
 invariant "Invalid implies empty owner"
-  HomeNode.state = H_Invalid
-    ->
+  HomeNode.state = H_I
+  ->
       IsUndefined(HomeNode.owner);
 
 invariant "value in memory matches value of last write, when invalid"
-     HomeNode.state = H_Invalid 
+     HomeNode.state = H_I 
     ->
 			HomeNode.val = LastWrite;
 
 invariant "values in valid state match last write"
   Forall n : Proc Do	
-     Procs[n].state = P_Valid
+    (Procs[n].state = P_S) | (Process[n].state = P_M)
     ->
 			Procs[n].val = LastWrite --LastWrite is updated whenever a new value is created 
 	end;
 	
 invariant "value is undefined while invalid"
   Forall n : Proc Do	
-     Procs[n].state = P_Invalid
+     Procs[n].state = P_I
     ->
 			IsUndefined(Procs[n].val)
 	end;
 	
-/*	
 -- Here are some invariants that are helpful for validating shared state.
 
 invariant "modified implies empty sharers list"
-  HomeNode.state = H_Modified
+  HomeNode.state = H_M
     ->
       MultiSetCount(i:HomeNode.sharers, true) = 0;
 
 invariant "Invalid implies empty sharer list"
-  HomeNode.state = H_Invalid
+  HomeNode.state = H_I
     ->
       MultiSetCount(i:HomeNode.sharers, true) = 0;
 
 invariant "values in memory matches value of last write, when shared or invalid"
   Forall n : Proc Do	
-     HomeNode.state = H_Shared | HomeNode.state = H_Invalid
+     HomeNode.state = H_S | HomeNode.state = H_I
     ->
 			HomeNode.val = LastWrite
 	end;
 
 invariant "values in shared state match memory"
   Forall n : Proc Do	
-     HomeNode.state = H_Shared & Procs[n].state = P_Shared
+     HomeNode.state = H_S & Procs[n].state = P_S
     ->
 			HomeNode.val = Procs[n].val
 	end;
-*/	
