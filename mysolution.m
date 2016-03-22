@@ -139,6 +139,7 @@ Begin
       then 
         -- Send invalidation message here
         Send(Inv, HomeNode.sharers[i], rqst, VC0, rqst.val);
+        MultiSetRemovePred(i:HomeNode.sharers, HomeNode.sharers[i] = n);
       endif;
     endif;
   endfor;
@@ -167,44 +168,42 @@ Begin
 	
 	case GetS:
       HomeNode.state := H_S;
-      HomeNode.owner := msg.src;
-      Send(Data, msg.src, HomeType, VC1, HomeNode.val);
+      AddToSharersList(msg.src);
+      Send(Data, msg.src, HomeType, VC0, HomeNode.val);
     case GetM:
       HomeNode.state := H_M;
       HomeNode.owner := msg.src;
-      Send(Data, msg.src, HomeType, VC1, HomeNode.val);
+      Send(Data, msg.src, HomeType, VC0, HomeNode.val);
     case PutS:
-      HomeNode.owner := msg.src;
-      Send(Put_Ack, msg.src, HomeType, VC1, HomeNode.val);
+      Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED);
 	case PutM:
-	
+	  Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED);
     else
       ErrorUnhandledMsg(msg, HomeType);
 
     endswitch;
 
   case H_S:
-    Assert (IsUndefined(HomeNode.owner) = false) 
-       "HomeNode has no owner, but line is Valid";
-
+  
     switch msg.mtype
     case GetS:
-      Send(RecallReq, HomeNode.owner, HomeType, VC0, UNDEFINED);
-      HomeNode.owner := msg.src; --remember who the new owner will be
-            
+      Send(Data, msg.src, HomeType, VC0, HomeNode.val);
+      AddToSharersList(msg.src);
     case GetM:
-    	assert (msg.src = HomeNode.owner) "Writeback from non-owner";
-      HomeNode.state := H_Invalid;
-      HomeNode.val := msg.val;
-      Send(WBAck, msg.src, HomeType, VC1, UNDEFINED);
-      undefine HomeNode.owner
-
+      HomeNode.state := H_M;
+      HomeNode.owner := msg.src;
+      Send(Data, msg.src, HomeType, VC0, HomeNode.val);
+      SendInvReqToSharers(HomeNode);
 	case PutS:
-      Send(RecallReq, HomeNode.owner, HomeType, VC0, UNDEFINED);
-      HomeNode.owner := msg.src; --remember who the new owner will be
+      Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED);
+      RemoveFromSharersList(msg.src);
+      if (MultiSetCount(i:HomeNode.sharers, HomeNode.sharers[i] = n) == 0)
+      then
+      	HomeNode.state := H_I;
+      endif;
     case PutM:
-      Send(RecallReq, HomeNode.owner, HomeType, VC0, UNDEFINED);
-      HomeNode.owner := msg.src; --remember who the new owner will be
+	  RemoveFromSharersList(msg.src);
+      Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED);
     else
       ErrorUnhandledMsg(msg, HomeType);
 
@@ -214,36 +213,39 @@ Begin
     switch msg.mtype
    
     case GetS:
-      Assert (!IsUnDefined(HomeNode.owner)) "owner undefined";
-      HomeNode.state := H_Valid;
-      HomeNode.val := msg.val;
-      Send(ReadAck, HomeNode.owner, HomeType, VC1, HomeNode.val);
-
+      HomeNode.state := H_S_D;
+      AddToSharersList(HomeNode.owner);
+      AddToSharersList(msg.src);
+      Send(GetS, HomeNode.owner, HomeType, VC1, UNDEFINED);
+      HomeNode.owner := UNDEFINED;
     case GetM:
-    	msg_processed := false; -- stall message in InBox
+    	Send(GetM, HomeNode.owner, HomeType, VC1, UNDEFINED);
+    	HomeNode.owner := msg.src;
     case PutS:
-    
+    	Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED);
     case PutM:
-
+		Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED);
+		if (msg.src == HomeNode.owner)
+		then
+			HomeNode.val := msg.val;
+			HomeNode.owner := UNDEFINED;
+			HomeNode.state := H_I;
+		endif;
     else
       ErrorUnhandledMsg(msg, HomeType);
 
   case H_S_D:
     switch msg.mtype
    
-    case GetS:
-      Assert (!IsUnDefined(HomeNode.owner)) "owner undefined";
-      HomeNode.state := H_Valid;
-      HomeNode.val := msg.val;
-      Send(ReadAck, HomeNode.owner, HomeType, VC1, HomeNode.val);
-
-    case GetM:
-    	msg_processed := false; -- stall message in InBox
-
 	case PutS:
+		Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED);
+      	RemoveFromSharersList(msg.src);
 	case PutM:
+		RemoveFromSharersList(msg.src);
+        Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED);
 	case Data:
-	
+		HomeNode.val := msg.val;
+		HomeNode.state := H_S;
     else
       ErrorUnhandledMsg(msg, HomeType);
 
@@ -264,54 +266,22 @@ Begin
   alias pv:Procs[p].val do
 
   switch ps
-  case P_I:
-
-    switch msg.mtype
-    case RecallReq:
-      Send(WBReq, msg.src, p, VC1, pv);
-      Undefine pv;
-      ps := P_Invalid;
-    else
-      ErrorUnhandledMsg(msg, p);
-    endswitch;
-
-  case PT_Pending:
-
-    switch msg.mtype
-    case ReadAck:
-      pv := msg.val;
-      ps := P_Valid;
-    case RecallReq:
-    	msg_processed := false; -- stall message in InBox
-    else
-      ErrorUnhandledMsg(msg, p);
-    endswitch;
-
 
   case P_IS_D:
-
     switch msg.mtype
-    case WBAck:
-      ps := P_Invalid;
-      undefine pv;
-    case RecallReq:				-- treat a recall request as a Writeback acknowledgement
-      ps := P_Invalid;
-      undefine pv;
+    case Data:
+      ps := P_S;
     else
       ErrorUnhandledMsg(msg, p);
 		endswitch;
   
   case P_IM_AD:
-  
   	switch msg.mtype
-  	case GetS:
-  	
-  	case GetM:
-  	
   	case Data:
-  	
+  		
   	case Inv_Ack:
-  
+  		RemoveFromSharersList(p);
+  		
   case P_IM_A:
   	switch msg.mtype
   	case GetS:
@@ -391,26 +361,39 @@ ruleset n:Proc Do
 
 	ruleset v:Value Do
   	rule "store new value"
-   	 (p.state = P_Valid)
+   	 (p.state = P_I)
     	==>
  		   p.val := v;      
  		   LastWrite := v;  --We use LastWrite to sanity check that reads receive the value of the last write
+ 		   Send(GetM, HomeType, n, VC0, UNDEFINED);
+ 		   p.state := P_IM_AD;
+   	 (p.state = P_S)
+    	==>
+ 		   p.val := v;      
+ 		   LastWrite := v;  --We use LastWrite to sanity check that reads receive the value of the last write
+ 		   Send(GetM, HomeType, n, VC0, UNDEFINED);
+ 		   p.state := P_SM_AD;
   	endrule;
 	endruleset;
 
   rule "read request"
-    p.state = P_Invalid 
+    (p.state = P_I)
   ==>
-    Send(ReadReq, HomeType, n, VC0, UNDEFINED);
-    p.state := PT_Pending;
+    Send(GetS, HomeType, n, VC0, UNDEFINED);
+    p.state := P_IS_D;
   endrule;
 
 
   rule "writeback"
-    (p.state = P_Valid)
+    (p.state = P_S)
   ==>
-    Send(WBReq, HomeType, n, VC1, p.val); 
-    p.state := PT_WritebackPending;
+    Send(PutS, HomeType, n, VC0, UNDEFINED); 
+    p.state := P_SI_A;
+    undefine p.val;
+    (p.state = P_M)
+  ==>
+    Send(PutS, HomeType, n, VC1, p.val); 
+    p.state := P_MI_A;
     undefine p.val;
   endrule;
 
