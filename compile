@@ -1,0 +1,3 @@
+./mu mysolution.m
+make
+./mysolution -td

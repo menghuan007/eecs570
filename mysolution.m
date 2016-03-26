@@ -24,7 +24,7 @@ type
   Node: union { Home , Proc };
 
   VCType: VC0..NumVCs-1;
-  Count: 0..ProcCount;
+  Count: -10..10;
   MessageType: enum {  GetS,
                        GetM,
                                              
@@ -140,10 +140,10 @@ Begin
         MultiSetCount(i:HomeNode.sharers, HomeNode.sharers[i] = n) != 0)
     then
       if n != rqst
-      then 
+      then
+	    RemoveFromSharersList(n);
         -- Send invalidation message here
-        Send(Inv, n, rqst, VC0, UNDEFINED, MultiSetCount(i:HomeNode.sharers, true));
-        MultiSetRemovePred(i:HomeNode.sharers, HomeNode.sharers[i] = n);
+        Send(Inv, n, rqst, VC1, UNDEFINED, MultiSetCount(i:HomeNode.sharers, true));
       endif;
     endif;
   endfor;
@@ -188,19 +188,19 @@ Begin
     endswitch;
 
   case H_S:
-  
     switch msg.mtype
     case GetS:
       Send(Data, msg.src, HomeType, VC0, HomeNode.val,cnt);
       AddToSharersList(msg.src);
     case GetM:
+      RemoveFromSharersList(msg.src);
+      SendInvreqToSharers(msg.src);
+      Send(Data, msg.src, HomeType, VC0, HomeNode.val,cnt);
       HomeNode.state := H_M;
       HomeNode.owner := msg.src;
-      Send(Data, msg.src, HomeType, VC0, HomeNode.val,cnt);
-      SendInvreqToSharers(HomeNode.sharers);
 	case PutS:
+	  RemoveFromSharersList(msg.src);
       Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED,cnt);
-      RemoveFromSharersList(msg.src);
       if (cnt = 0)
       then
       	HomeNode.state := H_I;
@@ -220,10 +220,10 @@ Begin
       HomeNode.state := H_S_D;
       AddToSharersList(HomeNode.owner);
       AddToSharersList(msg.src);
-      Send(GetS, HomeNode.owner, HomeType, VC1, UNDEFINED,cnt);
+      Send(GetS, HomeNode.owner, msg.src, VC1, UNDEFINED,cnt);
       HomeNode.owner := UNDEFINED;
     case GetM:
-    	Send(GetM, HomeNode.owner, HomeType, VC1, UNDEFINED,cnt);
+    	Send(GetM, HomeNode.owner, msg.src, VC1, UNDEFINED,cnt);
     	HomeNode.owner := msg.src;
     case PutS:
     	Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED,cnt);
@@ -241,10 +241,13 @@ Begin
 	
   case H_S_D:
     switch msg.mtype
-   
+    case GetS:
+    	msg_processed := false;
+    case GetM:
+    	msg_processed := false;
 	case PutS:
+		RemoveFromSharersList(msg.src);
 		Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED,cnt);
-      	RemoveFromSharersList(msg.src);
 	case PutM:
 		RemoveFromSharersList(msg.src);
         Send(Put_Ack, msg.src, HomeType, VC1, UNDEFINED,cnt);
@@ -253,8 +256,10 @@ Begin
 		HomeNode.state := H_S;
     else
       ErrorUnhandledMsg(msg, HomeType);
-
     endswitch;
+    
+  else
+    ErrorUnhandledState();
   endswitch;
 End;
 
@@ -269,127 +274,193 @@ Begin
 
   alias ps:Procs[p].state do
   alias pv:Procs[p].val do
+  alias pa:Procs[p].ack do
 
   switch ps
-
+  case P_I:
+  	switch msg.mtype
+    case Inv:
+      Send(Inv_Ack, msg.src, p, VC1, UNDEFINED, 0);
+    case GetS:
+    case GetM:
+    else
+      ErrorUnhandledMsg(msg, p);
+    endswitch;
   case P_IS_D:
     switch msg.mtype
+    case Inv:
+   	  msg_processed := false;
     case Data:
       ps := P_S;
+      pv := msg.val;
+    case GetS:
+    case GetM:
     else
       ErrorUnhandledMsg(msg, p);
 	endswitch;
 	
   case P_IM_AD:
   	switch msg.mtype
+  	case GetS:
+  		msg_processed := false;
+  	case GetM:
+  		msg_processed := false;
   	case Data:
+  		pv := msg.val;
 		if (msg.src = HomeType)
 		then
-			p.ack = p.ack + msg.cnt;
-			if (p.ack = 0)
+			Procs[p].ack := Procs[p].ack + msg.cnt;
+			if (Procs[p].ack = 0)
+			then
 				ps := P_M;
+				LastWrite := pv;
 			else
 				ps := P_IM_A;
 			endif;
 		else
 			ps := P_M;
+			LastWrite := pv;
 		endif;
-		pv := msg.val;
   	case Inv_Ack:
-		p.ack = p.ack - 1;
+		Procs[p].ack := Procs[p].ack - 1;
+	case Inv:
+	else
+      ErrorUnhandledMsg(msg, p);
 	endswitch;
-
+	
   case P_IM_A:
   	switch msg.mtype
+  	case GetS:
+  		msg_processed := false;
+  	case GetM:
+  		msg_processed := false;
   	case Inv_Ack:
-		p.ack = p.ack - 1;
-		if (p.ack = 0)
+		Procs[p].ack := Procs[p].ack - 1;
+		if (Procs[p].ack = 0)
+		then
 			ps := P_M;
+			LastWrite := pv;
+		endif;
+	else
+      ErrorUnhandledMsg(msg, p);
 	endswitch;
+	
   case P_S:
   	switch msg.mtype
   	case Inv:
-		Send(Inv_Ack, msg.src, p, VC1, UNDEFINED, UNDEFINED);
+		Send(Inv_Ack, msg.src, p, VC1, UNDEFINED, 0);
+		undefine pv;
 		ps := P_I;
+	else
+      ErrorUnhandledMsg(msg, p);
 	endswitch;
 	
   case P_SM_AD:
   	switch msg.mtype
+  	case GetS:
+  		msg_processed := false;
+  	case GetM:
+  		msg_processed := false;
   	case Inv:
-		Send(Inv_Ack, msg.src, p, VC1, UNDEFINED, UNDEFINED);
+		Send(Inv_Ack, msg.src, p, VC1, UNDEFINED, 0);
 		ps := P_IM_AD;
   	case Data:
+		pv := msg.val;
 		if (msg.src = HomeType)
 		then
-			p.ack = p.ack + msg.cnt;
-			if (p.ack = 0)
+			Procs[p].ack := Procs[p].ack + msg.cnt;
+			if (Procs[p].ack = 0)
+			then
 				ps := P_M;
+				LastWrite := pv;
 			else
 				ps := P_SM_A;
 			endif;
 		else
 			ps := P_M;
+			LastWrite := pv;
 		endif;
-		pv := msg.val;
   	case Inv_Ack:
-		p.ack = p.ack - 1;
+		Procs[p].ack := Procs[p].ack - 1;
+	else
+      ErrorUnhandledMsg(msg, p);
 	endswitch;
 
   case P_SM_A:
   	switch msg.mtype
+  	case GetS:
+  		msg_processed := false;
+  	case GetM:
+  		msg_processed := false;
   	case Inv_Ack:
-		p.ack = p.ack -1;
-		if (p.ack = 0)
+		Procs[p].ack := Procs[p].ack -1;
+		if (Procs[p].ack = 0)
+		then
 			ps := P_M;
+			LastWrite := pv;
 		endif;
+	else
+      ErrorUnhandledMsg(msg, p);
 	endswitch;
 
   case P_M:
   	switch msg.mtype
   	case GetS:
-		Send(Data, msg.src, p, VC0, pv, UNDEFINED);
-		Send(Data, HomeNode, p, VC0, pv, UNDEFINED);
+		Send(Data, msg.src, p, VC0, pv, 0);
+		Send(Data, HomeType, p, VC0, pv, 0);
 		ps := P_S;
   	case GetM:
-		Send(Data, msg.src, p, VC0, pv, UNDEFINED);
+		Send(Data, msg.src, p, VC0, pv, 0);
+		undefine pv;
 		ps := P_I;
+	else
+      ErrorUnhandledMsg(msg, p);
 	endswitch;
 
   case P_MI_A:
   	switch msg.mtype
   	case GetS:
-		Send(Data, msg.src, p, VC0, pv, UNDEFINED);
-		Send(Data, HomeNode, p, VC0, pv, UNDEFINED);
+		Send(Data, msg.src, p, VC0, pv, 0);
+		Send(Data, HomeType, p, VC0, pv, 0);
 		ps := P_SI_A;
   	case GetM:
-		Send(Data, msg.src, p, VC0, pv, UNDEFINED);
+		Send(Data, msg.src, p, VC0, pv, 0);
 		ps := P_II_A;
   	case Put_Ack:
+  		undefine pv;
 		ps := P_I;
+	else
+      ErrorUnhandledMsg(msg, p);
 	endswitch;
 
   case P_SI_A:
   	switch msg.mtype
   	case Inv:
-		Send(Inv_Ack, msg.src, p, VC1, UNDEFINED, UNDEFINED);
+		Send(Inv_Ack, msg.src, p, VC1, UNDEFINED, 0);
 		ps := P_II_A;
   	case Put_Ack:
+  		undefine pv;
 		ps := P_I;
+	else
+      ErrorUnhandledMsg(msg, p);
 	endswitch;
 
   case P_II_A:
   	switch msg.mtype
   	case Put_Ack:
+  		undefine pv;
 		ps := P_I;
+	else
+      ErrorUnhandledMsg(msg, p);
+    endswitch;
   ----------------------------
   -- Error catch
   ----------------------------
   else
     ErrorUnhandledState();
-
-  endswitch;
   endswitch;
   
+  endalias;
   endalias;
   endalias;
 End;
@@ -402,43 +473,53 @@ End;
 
 ruleset n:Proc Do
   alias p:Procs[n] Do
-
+  
 	ruleset v:Value Do
-  	rule "store new value"
+	
+	rule "store new value P_I"
    	 (p.state = P_I)
-    	=>
- 		   p.val := v;      
- 		   LastWrite := v;  --We use LastWrite to sanity check that reads receive the value of the last write
- 		   Send(GetM, HomeType, n, VC0, UNDEFINED, UNDEFINED);
+    	==>
+ 		   p.val := v;
+ 		   Send(GetM, HomeType, n, VC1, UNDEFINED, 0);
  		   p.state := P_IM_AD;
-   	 (p.state = P_S)
-    	=>
+  	endrule;
+  	
+  	rule "store new value P_M"
+   	 (p.state = P_M)
+    	==>
  		   p.val := v;      
  		   LastWrite := v;  --We use LastWrite to sanity check that reads receive the value of the last write
- 		   Send(GetM, HomeType, n, VC0, UNDEFINED, UNDEFINED);
+	 endrule;
+
+  	rule "store new value P_S"
+   	 (p.state = P_S)
+    	==>
+ 		   p.val := v;
+ 		   Send(GetM, HomeType, n, VC1, UNDEFINED, 0);
  		   p.state := P_SM_AD;
   	endrule;
-	endruleset;
+  	endruleset;
 
-  rule "read request"
+  rule "read request P_I"
     (p.state = P_I)
-  =>
-    Send(GetS, HomeType, n, VC0, UNDEFINED, UNDEFINED);
+  ==>
+    Send(GetS, HomeType, n, VC1, UNDEFINED, 0);
     p.state := P_IS_D;
   endrule;
 
 
-  rule "writeback"
+  rule "writeback P_S"
     (p.state = P_S)
-  =>
-    Send(PutS, HomeType, n, VC0, UNDEFINED, UNDEFINED); 
+  ==>
+    Send(PutS, HomeType, n, VC1, UNDEFINED, 0); 
     p.state := P_SI_A;
-    undefine p.val;
+    endrule;
+    
+  rule "writeback P_M"
     (p.state = P_M)
-  =>
-    Send(PutS, HomeType, n, VC1, p.val, UNDEFINED); 
+  ==>
+    Send(PutM, HomeType, n, VC1, p.val, 0); 
     p.state := P_MI_A;
-    undefine p.val;
   endrule;
 
   endalias;
@@ -454,7 +535,7 @@ ruleset n:Node do
 		-- Pick a random message in the network and delivier it
     rule "receive-net"
 			(isundefined(box[msg.vc].mtype))
-    =>
+    ==>
 
       if IsMember(n, Home)
       then
@@ -482,7 +563,7 @@ ruleset n:Node do
 	ruleset vc:VCType do
     rule "receive-blocked-vc"
 			(! isundefined(InBox[n][vc].mtype))
-    =>
+    ==>
       if IsMember(n, Home)
       then
         HomeReceive(InBox[n][vc]);
@@ -517,6 +598,7 @@ startstate
   -- processor initialization
   for i:Proc do
     Procs[i].state := P_I;
+    Procs[i].ack   := 0;
     undefine Procs[i].val;
   endfor;
 
@@ -533,14 +615,9 @@ invariant "Invalid implies empty owner"
   ->
       IsUndefined(HomeNode.owner);
 
-invariant "value in memory matches value of last write, when invalid"
-     HomeNode.state = H_I 
-    ->
-			HomeNode.val = LastWrite;
-
 invariant "values in valid state match last write"
   Forall n : Proc Do	
-    (Procs[n].state = P_S) | (Process[n].state = P_M)
+    Procs[n].state = P_S | Procs[n].state = P_M
     ->
 			Procs[n].val = LastWrite --LastWrite is updated whenever a new value is created 
 	end;
