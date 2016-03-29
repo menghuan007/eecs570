@@ -13,9 +13,8 @@ const
   VC3: 3;
   VC4: 4;
   VC5: 5;
-  VC6: 6;
   QMax: 2;
-  NumVCs: VC6 - VC0 + 1;
+  NumVCs: VC5 - VC0 + 1;
   NetMax: 2*ProcCount+1;
   
 
@@ -35,13 +34,11 @@ type
                                              
 				       PutS,
 				       PutM,
-				       PutE,
 				       Put_Ack,
                        
                        Inv,
                        Inv_Ack,
                        
-                       ExData,
                        Data,
                        NoData
                     };
@@ -60,8 +57,8 @@ type
 
   HomeState:
     Record
-      state: enum { H_I, H_S, H_M, H_E, 					--stable states
-      				H_S_D, H_M_A, H_EM_A};			--transient states
+      state: enum { H_I, H_S, H_M, 					--stable states
+      				H_S_D, H_M_A};			--transient states
       owner: Node;	
       sharers: multiset [ProcCount] of Node;		--No need for sharers in this protocol, but this is a good way to represent them
       val: Value;
@@ -69,9 +66,9 @@ type
 
   ProcState:
     Record
-      state: enum { P_I, P_S, P_M, P_E,					--stable states
+      state: enum { P_I, P_S, P_M,					--stable states
                   P_IS_D, P_IM_AD, P_IM_A, P_SM_AD, 
-				  P_SM_A, P_MI_A, P_SI_A, P_II_A, P_EI_A }; --transient states
+				  P_SM_A, P_MI_A, P_SI_A, P_II_A }; --transient states
       val: Value;
 	  ack: Count;
     End;
@@ -179,9 +176,9 @@ Begin
     switch msg.mtype
 	
 	case GetS:
-      HomeNode.state := H_E;
-      HomeNode.owner := msg.src;
-      Send(ExData, msg.src, HomeType, VC0, HomeNode.val, cnt);
+      HomeNode.state := H_S;
+      Send(Data, msg.src, HomeType, VC0, HomeNode.val, cnt);
+      AddToSharersList(msg.src);
     case GetM:
       HomeNode.state := H_M;
       HomeNode.owner := msg.src;
@@ -190,8 +187,7 @@ Begin
       Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED, cnt);
 	case PutM:
 	  Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED, cnt);
-	case PutE:
-	  Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED, cnt);
+	--case Data:
     else
       ErrorUnhandledMsg(msg, HomeType);
 
@@ -242,13 +238,8 @@ Begin
       endif;
 	  RemoveFromSharersList(msg.src);
       Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
-    case PutE:
-      if (cnt = 1 & IsSharer(msg.src))
-      then
-      	HomeNode.state := H_I;
-      endif;
-      RemoveFromSharersList(msg.src);
-      Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
+    --case Data:
+    --  msg_processed := false;
     else
       ErrorUnhandledMsg(msg, HomeType);
 
@@ -279,51 +270,11 @@ Begin
 			--Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
 			--msg_processed := false;
 		endif;
-	case PutE:
-		msg_processed := false;
-		--Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
+	--case Data:
+	--	msg_processed := false;
     else
       ErrorUnhandledMsg(msg, HomeType);
 	endswitch;
-	
-  case H_E:
-  	switch msg.mtype
-  	
-		case GetS:
-			Send(GetS, HomeNode.owner, msg.src, VC2, UNDEFINED, 0);
-			AddToSharersList(HomeNode.owner);
-			AddToSharersList(msg.src);
-			HomeNode.owner := UNDEFINED;
-     		HomeNode.state := H_S_D;
-		case GetM:
-			Send(GetM, HomeNode.owner, msg.src, VC3, UNDEFINED,cnt);
-    		HomeNode.owner := msg.src;
-    		--HomeNode.state := H_EM_A;
-    		HomeNode.state := H_M;
-		case PutS:
-			Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
-		case PutM:
-			if (HomeNode.owner = msg.src)
-			then
-				HomeNode.val := msg.val;
-				Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
-				HomeNode.owner := UNDEFINED;
-				HomeNode.state := H_I;
-			else
-				Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
-			endif;
-		case PutE:
-			if (HomeNode.owner = msg.src)
-			then
-				Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
-				HomeNode.owner := UNDEFINED;
-				HomeNode.state := H_I;
-			else
-				Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
-			endif;
-		else
-			ErrorUnhandledMsg(msg, HomeType);
-  	endswitch;
 	
   case H_S_D:
     switch msg.mtype
@@ -340,17 +291,26 @@ Begin
 		else
 			msg_processed := false;
 		endif;
+    	/*if (HomeNode.owner = msg.src)
+    	then
+    		RemoveFromSharersList(msg.src);
+    		Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
+        	HomeNode.state := H_S;
+        	HomeNode.val := msg.val;
+        	HomeNode.owner := UNDEFINED;
+        else
+        	--msg_processed := false;
+        	RemoveFromSharersList(msg.src);
+        	Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
+        endif;*/
 	case Data:
 		HomeNode.val := msg.val;
 		HomeNode.state := H_S;
-	case PutE:
-		msg_processed := false;
-		/*if (cnt = 1 & IsSharer(msg.src))
-      	then
-      		HomeNode.state := H_I;
-	    endif;
-    	RemoveFromSharersList(msg.src);
-    	Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);*/
+		--HomeNode.owner := UNDEFINED;
+		--if (cnt = 0)
+		--then
+		--	HomeNode.state := H_I;
+		--endif;
     else
       ErrorUnhandledMsg(msg, HomeType);
     endswitch;
@@ -365,15 +325,12 @@ Begin
 		RemoveFromSharersList(msg.src);
 	else
 		msg_processed := false;
+		/*RemoveFromSharersList(msg.src);
+		if (cnt = 1)
+		then
+			HomeNode.state := H_M;
+		endif;*/
     endswitch;
-  
-  /*case H_EM_A:
-  	switch msg.mtype
-  	case Put_Ack:
-  		HomeNode.state := H_M;
-  	else
-  		msg_processed := false;
-  endswitch;*/
   else
     ErrorUnhandledState();
   endswitch;
@@ -397,20 +354,16 @@ Begin
   	switch msg.mtype
     case Inv:
       Send(Inv_Ack, msg.src, p, VC5, UNDEFINED, 0);
+    --case GetS:
     else
       ErrorUnhandledMsg(msg, p);
     endswitch;
   case P_IS_D:
     switch msg.mtype
-    case GetS:
-      msg_processed := false;
-    case GetM:
-      msg_processed := false;
+    --case GetS:
+    --  msg_processed := false;
     case Inv:
    	  msg_processed := false;
-   	case ExData:
-   	  ps := P_E;
-      pv := msg.val;
     case Data:
       ps := P_S;
       pv := msg.val;
@@ -581,36 +534,9 @@ Begin
 	else
       ErrorUnhandledMsg(msg, p);
     endswitch;
-  
-  case P_E:
-  	switch msg.mtype
-  	case GetS:
-		Send(Data, msg.src, p, VC0, pv, 0);
-		Send(Data, HomeType, p, VC0, pv, 0);
-		ps := P_S;
-	case GetM:
-		Send(Data, msg.src, p, VC0, pv, 0);
-		undefine pv;
-		ps := P_I;
-	else
-		ErrorUnhandledMsg(msg, p);
-	endswitch;
-  
-  case P_EI_A:
-  	switch msg.mtype
-  	case GetS:
-		Send(Data, msg.src, p, VC0, pv, 0);
-		Send(Data, HomeType, p, VC0, pv, 0);
-		ps := P_SI_A;
-	case GetM:
-		Send(Data, msg.src, p, VC0, pv, 0);
-		ps := P_II_A;
-	case Put_Ack:
-		undefine pv;
-		ps := P_I;
-	else
-		ErrorUnhandledMsg(msg, p);
-	endswitch
+  ----------------------------
+  -- Error catch
+  ----------------------------
   else
     ErrorUnhandledState();
   endswitch;
@@ -653,14 +579,6 @@ ruleset n:Proc Do
  		   Send(GetM, HomeType, n, VC3, UNDEFINED, 0);
  		   p.state := P_SM_AD;
   	endrule;
-  	
-  	rule "store new value P_E"
-   	 (p.state = P_E)
-    	==>
- 		   p.val := v;
- 		   LastWrite := v;
- 		   p.state := P_M;
-  	endrule;
   	endruleset;
 
   rule "read request P_I"
@@ -683,13 +601,6 @@ ruleset n:Proc Do
   ==>
     Send(PutM, HomeType, n, VC4, p.val, 0);
     p.state := P_MI_A;
-  endrule;
-  
-  rule "writeback P_E"
-    (p.state = P_E)
-  ==>
-    Send(PutE, HomeType, n, VC6, p.val, 0);
-    p.state := P_EI_A;
   endrule;
 
   endalias;
