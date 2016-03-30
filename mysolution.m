@@ -12,10 +12,8 @@ const
   VC2: 2;
   VC3: 3;
   VC4: 4;
-  VC5: 5;
-  VC6: 6;
   QMax: 2;
-  NumVCs: VC6 - VC0 + 1;
+  NumVCs: VC4 - VC0 + 1;
   NetMax: 2*ProcCount+1;
   
 
@@ -151,7 +149,7 @@ Begin
       then
 	    RemoveFromSharersList(n);
         -- Send invalidation message here
-        Send(Inv, n, rqst, VC5, UNDEFINED, MultiSetCount(i:HomeNode.sharers, true));
+        Send(Inv, n, rqst, VC4, UNDEFINED, MultiSetCount(i:HomeNode.sharers, true));
       endif;
     endif;
   endfor;
@@ -210,7 +208,7 @@ Begin
 		  if n != msg.src
 		  then
 		    -- Send invalidation message here
-		    Send(Inv, n, msg.src, VC5, UNDEFINED, MultiSetCount(i:HomeNode.sharers, true));
+		    Send(Inv, n, msg.src, VC4, UNDEFINED, MultiSetCount(i:HomeNode.sharers, true));
 		  endif;
 		endif;
   	  endfor;
@@ -396,7 +394,7 @@ Begin
   case P_I:
   	switch msg.mtype
     case Inv:
-      Send(Inv_Ack, msg.src, p, VC5, UNDEFINED, 0);
+      Send(Inv_Ack, msg.src, p, VC4, UNDEFINED, 0);
     else
       ErrorUnhandledMsg(msg, p);
     endswitch;
@@ -470,8 +468,8 @@ Begin
 	--	Send(Data, msg.src, p, VC0, pv, 0);
 	--	Send(Data, HomeType, p, VC0, pv, 0);
   	case Inv:
-		Send(Inv_Ack, msg.src, p, VC5, UNDEFINED, 0);
-		Send(Inv_Ack, HomeType, p, VC5, UNDEFINED, 0);
+		Send(Inv_Ack, msg.src, p, VC4, UNDEFINED, 0);
+		Send(Inv_Ack, HomeType, p, VC4, UNDEFINED, 0);
 		undefine pv;
 		ps := P_I;
 	else
@@ -485,8 +483,8 @@ Begin
   	case GetM:
   		msg_processed := false;
   	case Inv:
-		Send(Inv_Ack, msg.src, p, VC5, UNDEFINED, 0);
-		Send(Inv_Ack, HomeType, p, VC5, UNDEFINED, 0);
+		Send(Inv_Ack, msg.src, p, VC4, UNDEFINED, 0);
+		Send(Inv_Ack, HomeType, p, VC4, UNDEFINED, 0);
 		ps := P_IM_AD;
   	case Data:
 		pv := msg.val;
@@ -563,8 +561,8 @@ Begin
 	--	Send(Data, msg.src, p, VC0, pv, 0);
 	--	Send(Data, HomeType, p, VC0, pv, 0);
   	case Inv:
-		Send(Inv_Ack, msg.src, p, VC5, UNDEFINED, 0);
-		Send(Inv_Ack, HomeType, p, VC5, UNDEFINED, 0);
+		Send(Inv_Ack, msg.src, p, VC4, UNDEFINED, 0);
+		Send(Inv_Ack, HomeType, p, VC4, UNDEFINED, 0);
 		ps := P_II_A;
   	case Put_Ack:
   		undefine pv;
@@ -681,14 +679,14 @@ ruleset n:Proc Do
   rule "writeback P_M"
     (p.state = P_M)
   ==>
-    Send(PutM, HomeType, n, VC4, p.val, 0);
+    Send(PutM, HomeType, n, VC3, p.val, 0);
     p.state := P_MI_A;
   endrule;
   
   rule "writeback P_E"
     (p.state = P_E)
   ==>
-    Send(PutE, HomeType, n, VC6, p.val, 0);
+    Send(PutE, HomeType, n, VC1, p.val, 0);
     p.state := P_EI_A;
   endrule;
 
