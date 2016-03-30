@@ -216,6 +216,10 @@ Begin
     case PutM:
 	  RemoveFromSharersList(msg.src);
       Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
+      if (cnt = 1 & IsSharer(msg.src))
+      then
+      	HomeNode.state := H_I;
+      endif;
     case Data:
     else
       ErrorUnhandledMsg(msg, HomeType);
@@ -237,12 +241,14 @@ Begin
     case PutS:
     	Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
     case PutM:
-		Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
 		if (msg.src = HomeNode.owner)
 		then
+			Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
 			HomeNode.val := msg.val;
 			HomeNode.owner := UNDEFINED;
 			HomeNode.state := H_I;
+		else
+			--msg_processed := false;
 		endif;
 	case Data:
     else
@@ -259,7 +265,7 @@ Begin
 		RemoveFromSharersList(msg.src);
 		Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
 	case PutM:
-		RemoveFromSharersList(msg.src);
+		/*RemoveFromSharersList(msg.src);
         Send(Put_Ack, msg.src, HomeType, VC2, UNDEFINED,cnt);
         for n:Node do
         	if IsSharer(n)
@@ -268,7 +274,8 @@ Begin
         	endif;
         endfor;
         HomeNode.val := msg.val;
-		HomeNode.state := H_S;
+		HomeNode.state := H_S;*/
+		msg_processed := false;
 	case Data:
 		HomeNode.val := msg.val;
 		HomeNode.state := H_S;

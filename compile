@@ -1,3 +1,4 @@
 ./mu mysolution.m
 make
-./mysolution -m500 -td
+./mysolution -m1000 -td > result
+cat result
